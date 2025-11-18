@@ -29,11 +29,11 @@ public class MasterController {
             String pdfId = (String) request.get("pdfId");
             Long size = ((Number) request.get("size")).longValue();
 
-            System.out.println("\n╔════════════════════════════════════════════════════════╗");
-            System.out.println("║  📤 PLANIFICANDO UPLOAD DE PDF                         ║");
-            System.out.println("╚════════════════════════════════════════════════════════╝");
+            System.out.println("\n========================================================");
+            System.out.println("  PLANIFICANDO UPLOAD DE PDF");
+            System.out.println("========================================================");
             System.out.println("   PDF ID: " + pdfId);
-            System.out.println("   Tamaño: " + size + " bytes");
+            System.out.println("   Tamano: " + size + " bytes");
 
             PdfMetadata metadata = masterService.planUpload(pdfId, size);
 
@@ -43,14 +43,14 @@ public class MasterController {
             response.put("chunks", metadata.getChunks());
             response.put("replicationFactor", 3);
 
-            System.out.println("   📦 Chunks: " + metadata.getChunks().size() / 3);
-            System.out.println("   🔄 Réplicas totales: " + metadata.getChunks().size());
+            System.out.println("   Chunks: " + metadata.getChunks().size() / 3);
+            System.out.println("   Replicas totales: " + metadata.getChunks().size());
             System.out.println();
 
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            System.err.println("❌ ERROR en planUpload: " + e.getMessage());
+            System.err.println("[ERROR] ERROR en planUpload: " + e.getMessage());
             e.printStackTrace();
             Map<String, Object> error = new HashMap<>();
             error.put("status", "error");

@@ -34,11 +34,11 @@ public class MasterService {
 
     @PostConstruct
     public void init() {
-        System.out.println("\n╔════════════════════════════════════════════════════════╗");
-        System.out.println("║  💾 INICIALIZANDO MASTER SERVICE                      ║");
-        System.out.println("╚════════════════════════════════════════════════════════╝");
-        System.out.println("   Tamaño de chunk: " + (CHUNK_SIZE / 1024) + " KB");
-        System.out.println("   Factor de replicación: " + REPLICATION_FACTOR + "x");
+        System.out.println("\n========================================================");
+        System.out.println("  INICIALIZANDO MASTER SERVICE");
+        System.out.println("========================================================");
+        System.out.println("   Tamano de chunk: " + (CHUNK_SIZE / 1024) + " KB");
+        System.out.println("   Factor de replicacion: " + REPLICATION_FACTOR + "x");
         System.out.println("   Ruta de metadatos: " + metadataPath);
         System.out.println();
 
@@ -47,11 +47,11 @@ public class MasterService {
             Path path = Paths.get(metadataPath);
             if (!Files.exists(path)) {
                 Files.createDirectories(path);
-                System.out.println("✅ Directorio de metadatos creado");
+                System.out.println("[OK] Directorio de metadatos creado");
             }
             loadMetadata();
         } catch (IOException e) {
-            System.err.println("⚠️  Error creando directorio de metadatos: " + e.getMessage());
+            System.err.println("[WARN] Error creando directorio de metadatos: " + e.getMessage());
         }
     }
 
@@ -66,14 +66,14 @@ public class MasterService {
         }
 
         if (healthyServers.size() < REPLICATION_FACTOR) {
-            System.out.println("⚠️  Advertencia: Solo " + healthyServers.size() +
+            System.out.println("[WARN] Advertencia: Solo " + healthyServers.size() +
                                " servidores disponibles (recomendado: " + REPLICATION_FACTOR + ")");
         }
 
         int numChunks = (int) Math.ceil((double) size / CHUNK_SIZE);
         PdfMetadata metadata = new PdfMetadata(pdfId, size);
 
-        System.out.println("   🔄 Distribuyendo chunks:");
+        System.out.println("   Distribuyendo chunks:");
 
         for (int i = 0; i < numChunks; i++) {
             List<String> selectedServers = selectServersForChunk(healthyServers, i);
@@ -89,7 +89,7 @@ public class MasterService {
             }
             serversStr.append("]");
 
-            System.out.println("      Chunk " + i + " → " + serversStr);
+            System.out.println("      Chunk " + i + " -> " + serversStr);
         }
 
         pdfMetadataStore.put(pdfId, metadata);
@@ -149,19 +149,36 @@ public class MasterService {
     }
 
     /**
-     * Registra un chunkserver
+     * @param url
+     * @param id
      */
     public void registerChunkserver(String url, String id) {
-        ChunkserverInfo info = new ChunkserverInfo(url, id);
-        chunkservers.put(url, info);
+        boolean isReregistration = chunkservers.containsKey(url);
 
-        System.out.println("\n╔════════════════════════════════════════════════════════╗");
-        System.out.println("║  ✅ CHUNKSERVER REGISTRADO                            ║");
-        System.out.println("╚════════════════════════════════════════════════════════╝");
-        System.out.println("   URL: " + url);
-        System.out.println("   ID: " + id);
-        System.out.println("   Total registrados: " + chunkservers.size());
-        System.out.println();
+        ChunkserverInfo info = chunkservers.computeIfAbsent(url,
+                k -> new ChunkserverInfo(url, id));
+
+        // Actualizar heartbeat inmediatamente
+        info.updateHeartbeat(new HashMap<>());
+
+        if (isReregistration) {
+            System.out.println("\n========================================================");
+            System.out.println("  CHUNKSERVER RE-REGISTRADO");
+            System.out.println("========================================================");
+            System.out.println("   URL: " + url);
+            System.out.println("   ID: " + id);
+            System.out.println("   Estado: Reconectado despues de caida");
+            System.out.println("   Total registrados: " + chunkservers.size());
+            System.out.println();
+        } else {
+            System.out.println("\n========================================================");
+            System.out.println("  CHUNKSERVER REGISTRADO");
+            System.out.println("========================================================");
+            System.out.println("   URL: " + url);
+            System.out.println("   ID: " + id);
+            System.out.println("   Total registrados: " + chunkservers.size());
+            System.out.println();
+        }
     }
 
     /**
@@ -226,7 +243,7 @@ public class MasterService {
     public void deletePdf(String pdfId) {
         pdfMetadataStore.remove(pdfId);
         saveMetadata();
-        System.out.println("🗑️  PDF eliminado de metadatos: " + pdfId);
+        System.out.println("[DELETE] PDF eliminado de metadatos: " + pdfId);
     }
 
     /**
@@ -238,7 +255,7 @@ public class MasterService {
             objectMapper.writerWithDefaultPrettyPrinter()
                     .writeValue(file, pdfMetadataStore);
         } catch (IOException e) {
-            System.err.println("⚠️  Error guardando metadatos: " + e.getMessage());
+            System.err.println("[WARN] Error guardando metadatos: " + e.getMessage());
         }
     }
 
@@ -253,10 +270,10 @@ public class MasterService {
                         objectMapper.getTypeFactory().constructMapType(
                                 HashMap.class, String.class, PdfMetadata.class));
                 pdfMetadataStore.putAll(loaded);
-                System.out.println("✅ Metadatos cargados: " + pdfMetadataStore.size() + " PDFs");
+                System.out.println("[OK] Metadatos cargados: " + pdfMetadataStore.size() + " PDFs");
             }
         } catch (IOException e) {
-            System.err.println("⚠️  Error cargando metadatos: " + e.getMessage());
+            System.err.println("[WARN] Error cargando metadatos: " + e.getMessage());
         }
     }
 

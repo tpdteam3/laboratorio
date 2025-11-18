@@ -56,10 +56,8 @@ public class StorageService {
 
             byte[] data = Base64.getDecoder().decode(base64Data);
             Files.write(filePath, data);
-
-            System.out.println("✅ [" + chunkserverId + "] Chunk guardado: " + filename +
+            System.out.println("[" + chunkserverId + "] Chunk guardado: " + filename +
                                " (" + data.length + " bytes)");
-
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Error decodificando Base64: " + e.getMessage(), e);
         } catch (IOException e) {
@@ -82,9 +80,7 @@ public class StorageService {
             byte[] data = Files.readAllBytes(filePath);
             System.out.println("📖 [" + chunkserverId + "] Chunk leído: " + filename +
                                " (" + data.length + " bytes)");
-
             return data;
-
         } catch (IOException e) {
             throw new RuntimeException("Error leyendo chunk: " + e.getMessage(), e);
         }

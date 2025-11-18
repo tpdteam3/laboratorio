@@ -156,6 +156,7 @@ public class GfsClientService {
                 int replicaIndex = (Integer) replica.get("replicaIndex");
 
                 try {
+                    // Comunicacion con el chunkserver
                     chunkData = readChunkFromServer(pdfId, i, chunkserverUrl);
 
                     String replicaType = replicaIndex == 0 ? "PRIMARIA" : "RÉPLICA " + replicaIndex;

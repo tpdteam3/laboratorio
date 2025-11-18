@@ -15,6 +15,7 @@ import java.util.Map;
 
 /**
  * Servicio que envía heartbeats al Master cada 15 segundos
+ * Con reconexión automática cuando el Master se recupera
  */
 @Service
 public class HeartbeatService {
@@ -37,6 +38,7 @@ public class HeartbeatService {
     private final RestTemplate restTemplate = new RestTemplate();
     private String chunkserverUrl;
     private int consecutiveFailures = 0;
+    private boolean wasDisconnected = false;
 
     @PostConstruct
     public void init() {
@@ -64,6 +66,7 @@ public class HeartbeatService {
 
     /**
      * Envía heartbeat cada 15 segundos
+     * Con lógica de reconexión automática
      */
     @Scheduled(fixedDelay = 15000, initialDelay = 15000)
     public void sendHeartbeat() {
@@ -89,23 +92,67 @@ public class HeartbeatService {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(heartbeat, headers);
             restTemplate.postForEntity(heartbeatUrl, entity, Map.class);
 
-            if (consecutiveFailures > 0) {
-                System.out.println("✅ [" + chunkserverId + "] Conexión con Master restaurada");
+            // Reconexión exitosa después de fallo
+            if (consecutiveFailures > 0 || wasDisconnected) {
+                System.out.println("║      RECONEXIÓN EXITOSA AL MASTER        ║");
+                System.out.println("   [" + chunkserverId + "] Master recuperado");
+                System.out.println("   Conexión restaurada después de " + consecutiveFailures + " intentos");
+                System.out.println();
+
+                // Re-registrar para asegurar que el Master nos reconozca
+                if (wasDisconnected) {
+                    reregisterWithMaster();
+                }
+
+                wasDisconnected = false;
             }
+
             consecutiveFailures = 0;
 
         } catch (Exception e) {
             consecutiveFailures++;
 
             if (consecutiveFailures == 1) {
-                System.err.println("⚠️  [" + chunkserverId + "] Error enviando heartbeat: " +
-                                   e.getMessage());
+                System.err.println("CONEXIÓN CON MASTER PERDIDA");
+                System.err.println("[" + chunkserverId + "] Error enviando heartbeat");
+                System.err.println("Intentando reconectar automáticamente...");
+                System.err.println();
             }
 
             if (consecutiveFailures >= 3) {
-                System.err.println("❌ [" + chunkserverId + "] No se puede contactar al Master (" +
-                                   consecutiveFailures + " intentos)");
+                wasDisconnected = true;
+                if (consecutiveFailures % 4 == 0) { // Log cada 4 intentos (cada minuto)
+                    System.err.println("[" + chunkserverId + "] Master aún no disponible (" +
+                                       consecutiveFailures + " intentos fallidos)");
+                    System.err.println("Continuando intentos de reconexión...");
+                }
             }
+        }
+    }
+
+    /**
+     * Re-registra el chunkserver con el Master después de una desconexión
+     */
+    private void reregisterWithMaster() {
+        try {
+            System.out.println("   📡 Re-registrando con el Master...");
+
+            String registerUrl = masterUrl + "/api/master/register";
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, String> request = new HashMap<>();
+            request.put("url", chunkserverUrl);
+            request.put("id", chunkserverId);
+
+            HttpEntity<Map<String, String>> entity = new HttpEntity<>(request, headers);
+            restTemplate.postForEntity(registerUrl, entity, Map.class);
+
+            System.out.println("   ✅ Re-registro completado exitosamente");
+
+        } catch (Exception e) {
+            System.err.println("   ⚠️  Error en re-registro (se reintentará): " + e.getMessage());
         }
     }
 }

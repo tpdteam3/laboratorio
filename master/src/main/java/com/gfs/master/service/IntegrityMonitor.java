@@ -34,11 +34,11 @@ public class IntegrityMonitor {
     public void checkIntegrity() {
         totalChecks++;
 
-        System.out.println("\n🔍 [INTEGRITY] Verificando integridad del sistema...");
+        System.out.println("\n[INTEGRITY] Verificando integridad del sistema...");
 
         List<String> healthyServers = masterService.getHealthyChunkservers();
         if (healthyServers.isEmpty()) {
-            System.out.println("   ⚠️  No hay servidores activos para verificar");
+            System.out.println("   [WARN] No hay servidores activos para verificar");
             return;
         }
 
@@ -66,7 +66,7 @@ public class IntegrityMonitor {
                     }
 
                     if (!chunkExists(pdf.getPdfId(), chunkIndex, replica.getChunkserverUrl())) {
-                        System.out.println("   ❌ Chunk faltante detectado:");
+                        System.out.println("   [ERROR] Chunk faltante detectado:");
                         System.out.println("      PDF: " + pdf.getPdfId());
                         System.out.println("      Chunk: " + chunkIndex);
                         System.out.println("      Servidor: " + replica.getChunkserverUrl());
@@ -84,12 +84,12 @@ public class IntegrityMonitor {
         }
 
         if (issuesFound > 0) {
-            System.out.println("\n📊 [INTEGRITY] Resultado:");
-            System.out.println("   ❌ Problemas detectados: " + issuesFound);
-            System.out.println("   ✅ Problemas reparados: " + issuesRepaired);
-            System.out.println("   🔧 Total reparaciones históricas: " + totalRepairs);
+            System.out.println("\n[INTEGRITY] Resultado:");
+            System.out.println("   Problemas detectados: " + issuesFound);
+            System.out.println("   Problemas reparados: " + issuesRepaired);
+            System.out.println("   Total reparaciones historicas: " + totalRepairs);
         } else {
-            System.out.println("   ✅ Sistema íntegro - sin problemas detectados");
+            System.out.println("   [OK] Sistema integro - sin problemas detectados");
         }
     }
 
@@ -115,7 +115,7 @@ public class IntegrityMonitor {
      */
     private boolean repairChunk(String pdfId, int chunkIndex, String targetServer,
                                 List<ChunkLocation> replicas) {
-        System.out.println("   🔧 Intentando reparar...");
+        System.out.println("   [REPAIR] Intentando reparar...");
 
         List<String> healthyServers = masterService.getHealthyChunkservers();
 
@@ -134,17 +134,17 @@ public class IntegrityMonitor {
                     // Escribir en destino
                     writeChunk(pdfId, chunkIndex, chunkData, targetServer);
 
-                    System.out.println("      ✅ Chunk reparado desde " + sourceServer);
+                    System.out.println("      [OK] Chunk reparado desde " + sourceServer);
                     return true;
 
                 } catch (Exception e) {
-                    System.err.println("      ⚠️  Fallo copiando desde " + sourceServer +
+                    System.err.println("      [WARN] Fallo copiando desde " + sourceServer +
                                        ": " + e.getMessage());
                 }
             }
         }
 
-        System.err.println("      ❌ No se pudo reparar - no hay réplicas disponibles");
+        System.err.println("      [ERROR] No se pudo reparar - no hay replicas disponibles");
         return false;
     }
 

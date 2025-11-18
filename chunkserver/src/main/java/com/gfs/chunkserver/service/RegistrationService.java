@@ -13,6 +13,7 @@ import java.util.Map;
 
 /**
  * Servicio que auto-registra el chunkserver con el Master al iniciar
+ * Con reintentos y manejo de errores mejorado
  */
 @Service
 public class RegistrationService {
@@ -43,7 +44,7 @@ public class RegistrationService {
         System.out.println("   Master: " + masterUrl);
 
         // Intentar registro con reintentos
-        int maxRetries = 5;
+        int maxRetries = 10;
         int attempt = 0;
         boolean registered = false;
 
@@ -73,9 +74,10 @@ public class RegistrationService {
                 System.err.println("   ❌ Error en intento " + attempt + ": " + e.getMessage());
 
                 if (attempt < maxRetries) {
+                    int waitTime = Math.min(5, attempt); // Backoff progresivo hasta 5 segundos
                     try {
-                        System.out.println("   ⏳ Reintentando en 3 segundos...");
-                        Thread.sleep(3000);
+                        System.out.println("   ⏳ Reintentando en " + waitTime + " segundos...");
+                        Thread.sleep(waitTime * 1000L);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -85,10 +87,21 @@ public class RegistrationService {
         }
 
         if (!registered) {
-            System.err.println("\n❌ ADVERTENCIA: No se pudo registrar con el Master");
-            System.err.println("   El chunkserver continuará ejecutándose");
-            System.err.println("   Verifique que el Master esté disponible en: " + masterUrl);
+            System.err.println("\n╔════════════════════════════════════════════════════════╗");
+            System.err.println("║  ⚠️  ADVERTENCIA: REGISTRO INICIAL FALLIDO            ║");
+            System.err.println("╚════════════════════════════════════════════════════════╝");
+            System.err.println("   ❌ No se pudo registrar con el Master");
+            System.err.println("   🔄 El HeartbeatService intentará reconectar automáticamente");
+            System.err.println("   💡 El chunkserver continuará ejecutándose");
+            System.err.println("   ⚙️  Verifica que el Master esté disponible en: " + masterUrl);
             System.err.println();
+        } else {
+            System.out.println("╔════════════════════════════════════════════════════════╗");
+            System.out.println("║  ✅ CHUNKSERVER LISTO                                 ║");
+            System.out.println("╚════════════════════════════════════════════════════════╝");
+            System.out.println("   🟢 Conectado al Master");
+            System.out.println("   💓 Heartbeats activos (cada 15s)");
+            System.out.println();
         }
     }
 }
