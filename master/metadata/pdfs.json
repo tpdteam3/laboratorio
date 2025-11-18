@@ -1,0 +1,122 @@
+{
+  "Práctica 03  Módulo II.pdf" : {
+    "pdfId" : "Práctica 03  Módulo II.pdf",
+    "size" : 114466,
+    "chunks" : [ {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 2
+    } ],
+    "timestamp" : 1763475485343
+  },
+  "Examen Modulo II TIPO B taller de desarrollo de software (1).pdf" : {
+    "pdfId" : "Examen Modulo II TIPO B taller de desarrollo de software (1).pdf",
+    "size" : 143273,
+    "chunks" : [ {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    } ],
+    "timestamp" : 1763474577871
+  }
+}
