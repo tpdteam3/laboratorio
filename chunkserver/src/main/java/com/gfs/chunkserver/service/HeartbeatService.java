@@ -50,7 +50,15 @@ public class HeartbeatService {
         System.out.println("   Intervalo: 15 segundos");
         System.out.println();
 
-        // Primer heartbeat inmediato para registro rápido
+        // Envío inmediato de heartbeat para registro
+        sendImmediateHeartbeat();
+    }
+
+    /**
+     * Envía heartbeat inmediatamente al registrarse
+     */
+    public void sendImmediateHeartbeat() {
+        System.out.println("🚀 [" + chunkserverId + "] Enviando heartbeat de registro...");
         sendHeartbeat();
     }
 

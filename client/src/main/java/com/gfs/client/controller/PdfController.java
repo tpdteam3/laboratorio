@@ -43,6 +43,24 @@ public class PdfController {
                 return ResponseEntity.badRequest().body(error);
             }
 
+            // Verificar que hay chunkservers saludables
+            try {
+                Map<String, Object> systemStatus = gfsClientService.getSystemStatus();
+                Integer healthyChunkservers = (Integer) systemStatus.get("healthyChunkservers");
+                
+                if (healthyChunkservers == null || healthyChunkservers == 0) {
+                    Map<String, String> error = new HashMap<>();
+                    error.put("status", "error");
+                    error.put("message", "No hay chunkservers saludables disponibles. Los chunkservers están registrados pero no responden.");
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+                }
+            } catch (Exception e) {
+                Map<String, String> error = new HashMap<>();
+                error.put("status", "error");
+                error.put("message", "No se puede conectar al Master Server. Verifica que esté ejecutándose.");
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+            }
+
             System.out.println("\n╔════════════════════════════════════════════════════════╗");
             System.out.println("║  📤 CLIENTE: SUBIENDO PDF                             ║");
             System.out.println("╚════════════════════════════════════════════════════════╝");
