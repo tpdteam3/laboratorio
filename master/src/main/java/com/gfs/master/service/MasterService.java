@@ -149,8 +149,7 @@ public class MasterService {
     }
 
     /**
-     * @param url
-     * @param id
+     * Registra un chunkserver
      */
     public void registerChunkserver(String url, String id) {
         boolean isReregistration = chunkservers.containsKey(url);
@@ -178,6 +177,42 @@ public class MasterService {
             System.out.println("   ID: " + id);
             System.out.println("   Total registrados: " + chunkservers.size());
             System.out.println();
+        }
+    }
+
+    /**
+     * Actualiza la ubicación de un chunk después de re-replicación
+     */
+    public void updateChunkLocation(String pdfId, int chunkIndex,
+                                    String oldServerUrl, String newServerUrl) {
+        PdfMetadata metadata = pdfMetadataStore.get(pdfId);
+        if (metadata == null) {
+            System.err.println("[WARN] No se encontró metadata para PDF: " + pdfId);
+            return;
+        }
+
+        boolean updated = false;
+        for (ChunkLocation chunk : metadata.getChunks()) {
+            if (chunk.getChunkIndex() == chunkIndex &&
+                chunk.getChunkserverUrl().equals(oldServerUrl)) {
+
+                chunk.setChunkserverUrl(newServerUrl);
+                updated = true;
+
+                System.out.println("[METADATA] Ubicación actualizada:");
+                System.out.println("   PDF: " + pdfId);
+                System.out.println("   Chunk: " + chunkIndex);
+                System.out.println("   Antiguo: " + oldServerUrl);
+                System.out.println("   Nuevo: " + newServerUrl);
+                break;
+            }
+        }
+
+        if (updated) {
+            saveMetadata();
+        } else {
+            System.err.println("[WARN] No se encontró chunk para actualizar: " +
+                               pdfId + " chunk " + chunkIndex + " en " + oldServerUrl);
         }
     }
 

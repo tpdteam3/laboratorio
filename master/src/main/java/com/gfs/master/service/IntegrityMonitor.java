@@ -14,8 +14,8 @@ import org.springframework.web.client.RestTemplate;
 import java.util.*;
 
 /**
- * Servicio simplificado de integridad
- * Detecta chunks faltantes y los repara
+ * Servicio de integridad con re-replicación inteligente
+ * Detecta chunks faltantes y crea nuevas réplicas en servidores saludables
  */
 @Service
 public class IntegrityMonitor {
@@ -59,22 +59,39 @@ public class IntegrityMonitor {
                 int chunkIndex = entry.getKey();
                 List<ChunkLocation> replicas = entry.getValue();
 
-                // Verificar si cada réplica existe físicamente
-                for (ChunkLocation replica : replicas) {
-                    if (!healthyServers.contains(replica.getChunkserverUrl())) {
-                        continue; // Servidor caído, skip
-                    }
+                // Contar réplicas disponibles
+                int availableReplicas = 0;
+                List<ChunkLocation> unavailableReplicas = new ArrayList<>();
 
-                    if (!chunkExists(pdf.getPdfId(), chunkIndex, replica.getChunkserverUrl())) {
-                        System.out.println("   [ERROR] Chunk faltante detectado:");
+                for (ChunkLocation replica : replicas) {
+                    String serverUrl = replica.getChunkserverUrl();
+
+                    if (!healthyServers.contains(serverUrl)) {
+                        // Servidor caído
+                        unavailableReplicas.add(replica);
+                        System.out.println("   [ERROR] Réplica en servidor caído:");
                         System.out.println("      PDF: " + pdf.getPdfId());
                         System.out.println("      Chunk: " + chunkIndex);
-                        System.out.println("      Servidor: " + replica.getChunkserverUrl());
-
+                        System.out.println("      Servidor caído: " + serverUrl);
                         issuesFound++;
+                    } else if (!chunkExists(pdf.getPdfId(), chunkIndex, serverUrl)) {
+                        // Chunk faltante en servidor activo
+                        unavailableReplicas.add(replica);
+                        System.out.println("   [ERROR] Chunk faltante en servidor activo:");
+                        System.out.println("      PDF: " + pdf.getPdfId());
+                        System.out.println("      Chunk: " + chunkIndex);
+                        System.out.println("      Servidor: " + serverUrl);
+                        issuesFound++;
+                    } else {
+                        availableReplicas++;
+                    }
+                }
 
-                        // Intentar reparar
-                        if (repairChunk(pdf.getPdfId(), chunkIndex, replica.getChunkserverUrl(), replicas)) {
+                // Si hay réplicas no disponibles, intentar re-replicar
+                if (!unavailableReplicas.isEmpty() && availableReplicas > 0) {
+                    for (ChunkLocation unavailable : unavailableReplicas) {
+                        if (reReplicateChunk(pdf.getPdfId(), chunkIndex, replicas,
+                                unavailable, healthyServers)) {
                             issuesRepaired++;
                             totalRepairs++;
                         }
@@ -87,9 +104,9 @@ public class IntegrityMonitor {
             System.out.println("\n[INTEGRITY] Resultado:");
             System.out.println("   Problemas detectados: " + issuesFound);
             System.out.println("   Problemas reparados: " + issuesRepaired);
-            System.out.println("   Total reparaciones historicas: " + totalRepairs);
+            System.out.println("   Total reparaciones históricas: " + totalRepairs);
         } else {
-            System.out.println("   [OK] Sistema integro - sin problemas detectados");
+            System.out.println("   [OK] Sistema íntegro - sin problemas detectados");
         }
     }
 
@@ -111,41 +128,98 @@ public class IntegrityMonitor {
     }
 
     /**
-     * Repara un chunk faltante copiándolo desde otra réplica
+     * Re-replica un chunk faltante en un nuevo servidor saludable
      */
-    private boolean repairChunk(String pdfId, int chunkIndex, String targetServer,
-                                List<ChunkLocation> replicas) {
-        System.out.println("   [REPAIR] Intentando reparar...");
+    private boolean reReplicateChunk(String pdfId, int chunkIndex,
+                                     List<ChunkLocation> replicas,
+                                     ChunkLocation unavailableReplica,
+                                     List<String> healthyServers) {
 
-        List<String> healthyServers = masterService.getHealthyChunkservers();
+        System.out.println("   [REPAIR] Iniciando re-replicación...");
+        System.out.println("      Réplica perdida: " + unavailableReplica.getChunkserverUrl());
 
-        // Buscar réplica fuente disponible
+        // 1. Encontrar servidor fuente con el chunk disponible
+        String sourceServer = null;
         for (ChunkLocation replica : replicas) {
-            String sourceServer = replica.getChunkserverUrl();
+            String serverUrl = replica.getChunkserverUrl();
 
-            if (sourceServer.equals(targetServer)) continue; // No copiar de sí mismo
-            if (!healthyServers.contains(sourceServer)) continue; // Servidor caído
+            if (!serverUrl.equals(unavailableReplica.getChunkserverUrl()) &&
+                healthyServers.contains(serverUrl) &&
+                chunkExists(pdfId, chunkIndex, serverUrl)) {
 
-            if (chunkExists(pdfId, chunkIndex, sourceServer)) {
-                try {
-                    // Leer chunk desde fuente
-                    byte[] chunkData = readChunk(pdfId, chunkIndex, sourceServer);
+                sourceServer = serverUrl;
+                break;
+            }
+        }
 
-                    // Escribir en destino
-                    writeChunk(pdfId, chunkIndex, chunkData, targetServer);
+        if (sourceServer == null) {
+            System.err.println("      [ERROR] No hay réplicas disponibles como fuente");
+            return false;
+        }
 
-                    System.out.println("      [OK] Chunk reparado desde " + sourceServer);
-                    return true;
+        System.out.println("      Servidor fuente encontrado: " + sourceServer);
 
-                } catch (Exception e) {
-                    System.err.println("      [WARN] Fallo copiando desde " + sourceServer +
-                                       ": " + e.getMessage());
+        // 2. Encontrar servidor destino (saludable y que no tenga ya este chunk)
+        String targetServer = null;
+        Set<String> serversWithChunk = new HashSet<>();
+        for (ChunkLocation replica : replicas) {
+            serversWithChunk.add(replica.getChunkserverUrl());
+        }
+
+        for (String server : healthyServers) {
+            if (!serversWithChunk.contains(server) ||
+                server.equals(unavailableReplica.getChunkserverUrl())) {
+
+                // Este servidor está saludable y no tiene el chunk (o es el caído)
+                if (!server.equals(unavailableReplica.getChunkserverUrl()) ||
+                    healthyServers.contains(server)) {
+                    targetServer = server;
+                    break;
                 }
             }
         }
 
-        System.err.println("      [ERROR] No se pudo reparar - no hay replicas disponibles");
-        return false;
+        // Si no encontramos un servidor nuevo, usar cualquier servidor saludable
+        if (targetServer == null) {
+            for (String server : healthyServers) {
+                if (!server.equals(sourceServer)) {
+                    targetServer = server;
+                    break;
+                }
+            }
+        }
+
+        if (targetServer == null) {
+            System.err.println("      [ERROR] No hay servidores disponibles para re-replicación");
+            return false;
+        }
+
+        System.out.println("      Servidor destino seleccionado: " + targetServer);
+
+        // 3. Copiar chunk de fuente a destino
+        try {
+            // Leer chunk desde fuente
+            byte[] chunkData = readChunk(pdfId, chunkIndex, sourceServer);
+            System.out.println("      Chunk leído desde fuente (" + chunkData.length + " bytes)");
+
+            // Escribir en destino
+            writeChunk(pdfId, chunkIndex, chunkData, targetServer);
+            System.out.println("      [OK] Chunk escrito en servidor destino");
+
+            // 4. Actualizar metadatos (cambiar la ubicación de la réplica)
+            masterService.updateChunkLocation(pdfId, chunkIndex,
+                    unavailableReplica.getChunkserverUrl(),
+                    targetServer);
+
+            System.out.println("      [OK] Re-replicación completada:");
+            System.out.println("         " + sourceServer + " → " + targetServer);
+
+            return true;
+
+        } catch (Exception e) {
+            System.err.println("      [ERROR] Fallo en re-replicación: " + e.getMessage());
+            return false;
+        }
     }
 
     /**
