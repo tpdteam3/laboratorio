@@ -45,7 +45,7 @@ public class HeartbeatService {
         chunkserverUrl = "http://" + hostname + ":" + serverPort;
 
         System.out.println("╔════════════════════════════════════════════════════════╗");
-        System.out.println("║  💓 HEARTBEAT SERVICE ACTIVADO                        ║");
+        System.out.println("║     HEARTBEAT SERVICE ACTIVADO                         ║");
         System.out.println("╚════════════════════════════════════════════════════════╝");
         System.out.println("   Chunkserver URL: " + chunkserverUrl);
         System.out.println("   Master URL: " + masterUrl);
