@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 @Service
 public class MasterService {
@@ -37,9 +38,10 @@ public class MasterService {
         System.out.println("\n========================================================");
         System.out.println("  INICIALIZANDO MASTER SERVICE");
         System.out.println("========================================================");
-        System.out.println("   Tamano de chunk: " + (CHUNK_SIZE / 1024) + " KB");
-        System.out.println("   Factor de replicacion: " + REPLICATION_FACTOR + "x");
+        System.out.println("   Tamaño de chunk: " + (CHUNK_SIZE / 1024) + " KB");
+        System.out.println("   Factor de replicación: " + REPLICATION_FACTOR + "x");
         System.out.println("   Ruta de metadatos: " + metadataPath);
+        System.out.println("   Balanceo de carga: ACTIVADO");
         System.out.println();
 
         // Crear directorio de metadatos
@@ -56,7 +58,7 @@ public class MasterService {
     }
 
     /**
-     * Planifica la subida de un PDF
+     * Planifica la subida de un PDF con balanceo de carga mejorado
      */
     public PdfMetadata planUpload(String pdfId, long size) {
         List<String> healthyServers = getHealthyChunkservers();
@@ -73,10 +75,13 @@ public class MasterService {
         int numChunks = (int) Math.ceil((double) size / CHUNK_SIZE);
         PdfMetadata metadata = new PdfMetadata(pdfId, size);
 
-        System.out.println("   Distribuyendo chunks:");
+        System.out.println("   Distribuyendo chunks con balanceo de carga:");
 
         for (int i = 0; i < numChunks; i++) {
-            List<String> selectedServers = selectServersForChunk(healthyServers, i);
+            // Usar balanceo de carga mejorado
+            List<String> selectedServers = selectServersForChunkWithLoadBalancing(
+                    healthyServers, i
+            );
 
             StringBuilder serversStr = new StringBuilder("[");
             for (int r = 0; r < selectedServers.size(); r++) {
@@ -84,13 +89,16 @@ public class MasterService {
                 ChunkLocation location = new ChunkLocation(i, server, r);
                 metadata.getChunks().add(location);
 
-                serversStr.append(server);
+                serversStr.append(extractServerId(server));
                 if (r < selectedServers.size() - 1) serversStr.append(", ");
             }
             serversStr.append("]");
 
             System.out.println("      Chunk " + i + " -> " + serversStr);
         }
+
+        // Mostrar distribución final
+        showLoadDistribution(metadata);
 
         pdfMetadataStore.put(pdfId, metadata);
         saveMetadata();
@@ -99,21 +107,104 @@ public class MasterService {
     }
 
     /**
-     * Selecciona servidores para un chunk específico
+     * NUEVO: Selección de servidores con balanceo de carga mejorado
+     * Prioriza servidores con menos carga actual
      */
-    private List<String> selectServersForChunk(List<String> availableServers, int chunkIndex) {
-        List<String> selected = new ArrayList<>();
-        List<String> shuffled = new ArrayList<>(availableServers);
+    private List<String> selectServersForChunkWithLoadBalancing(
+            List<String> availableServers, int chunkIndex) {
 
-        // Rotación para distribuir carga
-        Collections.rotate(shuffled, chunkIndex);
+        // Calcular carga actual de cada servidor
+        Map<String, ServerLoad> serverLoads = calculateServerLoads(availableServers);
 
-        int numReplicas = Math.min(REPLICATION_FACTOR, shuffled.size());
-        for (int i = 0; i < numReplicas; i++) {
-            selected.add(shuffled.get(i));
+        // Ordenar servidores por carga (menor primero)
+        List<String> sortedServers = availableServers.stream()
+                .sorted((s1, s2) -> {
+                    ServerLoad load1 = serverLoads.get(s1);
+                    ServerLoad load2 = serverLoads.get(s2);
+
+                    // Primero por número de chunks
+                    int cmp = Integer.compare(load1.chunkCount, load2.chunkCount);
+                    if (cmp != 0) return cmp;
+
+                    // Luego por espacio usado
+                    return Long.compare(load1.storageUsed, load2.storageUsed);
+                })
+                .collect(Collectors.toList());
+
+        // Aplicar rotación ligera para evitar siempre elegir los mismos
+        // cuando hay empate en carga
+        Collections.rotate(sortedServers, -(chunkIndex % sortedServers.size()));
+
+        // Seleccionar los N menos cargados
+        int numReplicas = Math.min(REPLICATION_FACTOR, sortedServers.size());
+        return new ArrayList<>(sortedServers.subList(0, numReplicas));
+    }
+
+    /**
+     * NUEVO: Calcula la carga actual de cada servidor
+     */
+    private Map<String, ServerLoad> calculateServerLoads(List<String> servers) {
+        Map<String, ServerLoad> loads = new HashMap<>();
+
+        for (String server : servers) {
+            ChunkserverInfo info = chunkservers.get(server);
+            ServerLoad load = new ServerLoad();
+
+            if (info != null && info.getLastInventory() != null) {
+                // Contar chunks totales en este servidor
+                Map<String, List<Integer>> inventory = info.getLastInventory();
+                load.chunkCount = inventory.values().stream()
+                        .mapToInt(List::size)
+                        .sum();
+
+                // Calcular espacio usado (estimado)
+                load.storageUsed = load.chunkCount * CHUNK_SIZE;
+            }
+
+            loads.put(server, load);
         }
 
-        return selected;
+        return loads;
+    }
+
+    /**
+     * NUEVO: Muestra distribución de carga después de la asignación
+     */
+    private void showLoadDistribution(PdfMetadata metadata) {
+        Map<String, Integer> distribution = new HashMap<>();
+
+        for (ChunkLocation chunk : metadata.getChunks()) {
+            String serverId = extractServerId(chunk.getChunkserverUrl());
+            distribution.put(serverId, distribution.getOrDefault(serverId, 0) + 1);
+        }
+
+        System.out.println("\n   📊 Distribución de carga para este PDF:");
+        distribution.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry ->
+                        System.out.println("      " + entry.getKey() + ": " +
+                                           entry.getValue() + " chunks")
+                );
+    }
+
+    /**
+     * NUEVO: Agrega una nueva réplica de chunk (usado por re-replicación)
+     */
+    public void addChunkReplica(String pdfId, ChunkLocation newReplica) {
+        PdfMetadata metadata = pdfMetadataStore.get(pdfId);
+        if (metadata == null) {
+            throw new RuntimeException("PDF no encontrado: " + pdfId);
+        }
+
+        // Verificar que no exista ya esta réplica
+        boolean exists = metadata.getChunks().stream()
+                .anyMatch(c -> c.getChunkIndex() == newReplica.getChunkIndex() &&
+                               c.getChunkserverUrl().equals(newReplica.getChunkserverUrl()));
+
+        if (!exists) {
+            metadata.getChunks().add(newReplica);
+            saveMetadata();
+        }
     }
 
     /**
@@ -149,8 +240,7 @@ public class MasterService {
     }
 
     /**
-     * @param url
-     * @param id
+     * Registra un chunkserver
      */
     public void registerChunkserver(String url, String id) {
         boolean isReregistration = chunkservers.containsKey(url);
@@ -158,7 +248,6 @@ public class MasterService {
         ChunkserverInfo info = chunkservers.computeIfAbsent(url,
                 k -> new ChunkserverInfo(url, id));
 
-        // Actualizar heartbeat inmediatamente
         info.updateHeartbeat(new HashMap<>());
 
         if (isReregistration) {
@@ -167,7 +256,7 @@ public class MasterService {
             System.out.println("========================================================");
             System.out.println("   URL: " + url);
             System.out.println("   ID: " + id);
-            System.out.println("   Estado: Reconectado despues de caida");
+            System.out.println("   Estado: Reconectado después de caída");
             System.out.println("   Total registrados: " + chunkservers.size());
             System.out.println();
         } else {
@@ -198,7 +287,7 @@ public class MasterService {
     }
 
     /**
-     * Obtiene estado del sistema
+     * Obtiene estado del sistema con estadísticas de carga
      */
     public Map<String, Object> getSystemStatus() {
         List<String> healthy = getHealthyChunkservers();
@@ -226,6 +315,16 @@ public class MasterService {
 
         status.put("totalChunks", totalChunks);
         status.put("totalReplicas", totalReplicas);
+
+        // NUEVO: Estadísticas de balanceo de carga
+        Map<String, Integer> loadPerServer = new HashMap<>();
+        for (PdfMetadata metadata : pdfMetadataStore.values()) {
+            for (ChunkLocation chunk : metadata.getChunks()) {
+                String serverId = extractServerId(chunk.getChunkserverUrl());
+                loadPerServer.put(serverId, loadPerServer.getOrDefault(serverId, 0) + 1);
+            }
+        }
+        status.put("loadDistribution", loadPerServer);
 
         return status;
     }
@@ -286,6 +385,19 @@ public class MasterService {
     }
 
     /**
+     * Extrae el ID del servidor desde la URL
+     */
+    private String extractServerId(String url) {
+        // Extrae el puerto de la URL como ID
+        // http://localhost:9001 -> cs-9001
+        if (url.contains(":")) {
+            String port = url.substring(url.lastIndexOf(":") + 1);
+            return "cs-" + port;
+        }
+        return url;
+    }
+
+    /**
      * Clase interna para información de chunkserver
      */
     private static class ChunkserverInfo {
@@ -322,5 +434,13 @@ public class MasterService {
         public Map<String, List<Integer>> getLastInventory() {
             return lastInventory;
         }
+    }
+
+    /**
+     * NUEVO: Clase interna para tracking de carga de servidor
+     */
+    private static class ServerLoad {
+        int chunkCount = 0;
+        long storageUsed = 0;
     }
 }

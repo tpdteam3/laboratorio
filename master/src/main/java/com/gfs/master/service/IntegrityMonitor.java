@@ -3,6 +3,7 @@ package com.gfs.master.service;
 import com.gfs.master.model.ChunkLocation;
 import com.gfs.master.model.PdfMetadata;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -12,10 +13,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Servicio simplificado de integridad
- * Detecta chunks faltantes y los repara
+ * Servicio mejorado de monitoreo de integridad
+ * - Detecta y repara chunks faltantes
+ * - Re-replicación automática proactiva
+ * - Garbage collection de chunks huérfanos
  */
 @Service
 public class IntegrityMonitor {
@@ -23,22 +27,32 @@ public class IntegrityMonitor {
     @Autowired
     private MasterService masterService;
 
+    @Value("${gfs.replication-factor:3}")
+    private int REPLICATION_FACTOR;
+
     private final RestTemplate restTemplate = new RestTemplate();
+
+    // Estadísticas
     private long totalRepairs = 0;
     private long totalChecks = 0;
+    private long totalGarbageCollected = 0;
+    private long totalReReplications = 0;
 
     /**
      * Verifica integridad cada 30 segundos
+     * Detecta chunks faltantes y los repara
      */
     @Scheduled(fixedDelay = 30000, initialDelay = 10000)
     public void checkIntegrity() {
         totalChecks++;
 
-        System.out.println("\n[INTEGRITY] Verificando integridad del sistema...");
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║  🔍 VERIFICACIÓN DE INTEGRIDAD                        ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
 
         List<String> healthyServers = masterService.getHealthyChunkservers();
         if (healthyServers.isEmpty()) {
-            System.out.println("   [WARN] No hay servidores activos para verificar");
+            System.out.println("   ⚠️  No hay servidores activos para verificar");
             return;
         }
 
@@ -66,7 +80,7 @@ public class IntegrityMonitor {
                     }
 
                     if (!chunkExists(pdf.getPdfId(), chunkIndex, replica.getChunkserverUrl())) {
-                        System.out.println("   [ERROR] Chunk faltante detectado:");
+                        System.out.println("   ❌ Chunk faltante detectado:");
                         System.out.println("      PDF: " + pdf.getPdfId());
                         System.out.println("      Chunk: " + chunkIndex);
                         System.out.println("      Servidor: " + replica.getChunkserverUrl());
@@ -84,13 +98,237 @@ public class IntegrityMonitor {
         }
 
         if (issuesFound > 0) {
-            System.out.println("\n[INTEGRITY] Resultado:");
-            System.out.println("   Problemas detectados: " + issuesFound);
-            System.out.println("   Problemas reparados: " + issuesRepaired);
-            System.out.println("   Total reparaciones historicas: " + totalRepairs);
+            System.out.println("\n   📊 Resultado:");
+            System.out.println("      Problemas detectados: " + issuesFound);
+            System.out.println("      Problemas reparados: " + issuesRepaired);
+            System.out.println("      Total reparaciones históricas: " + totalRepairs);
         } else {
-            System.out.println("   [OK] Sistema integro - sin problemas detectados");
+            System.out.println("   ✅ Sistema íntegro - sin problemas detectados");
         }
+        System.out.println();
+    }
+
+    /**
+     * Re-replicación automática proactiva
+     * Mantiene el factor de replicación deseado
+     * Se ejecuta cada 60 segundos
+     */
+    @Scheduled(fixedDelay = 60000, initialDelay = 20000)
+    public void checkReplicationFactor() {
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║  📦 VERIFICACIÓN DE FACTOR DE REPLICACIÓN             ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
+
+        List<String> healthyServers = masterService.getHealthyChunkservers();
+
+        if (healthyServers.isEmpty()) {
+            System.out.println("   ⚠️  No hay servidores activos");
+            return;
+        }
+
+        if (healthyServers.size() < REPLICATION_FACTOR) {
+            System.out.println("   ⚠️  Solo " + healthyServers.size() +
+                               " servidores disponibles (requerido: " + REPLICATION_FACTOR + ")");
+        }
+
+        List<PdfMetadata> allPdfs = masterService.listAllPdfs();
+        int chunksUnderReplicated = 0;
+        int replicasCreated = 0;
+
+        for (PdfMetadata pdf : allPdfs) {
+            Map<Integer, List<ChunkLocation>> chunksByIndex = groupByIndex(pdf.getChunks());
+
+            for (Map.Entry<Integer, List<ChunkLocation>> entry : chunksByIndex.entrySet()) {
+                int chunkIndex = entry.getKey();
+                List<ChunkLocation> replicas = entry.getValue();
+
+                // Contar réplicas activas (en servidores saludables Y que existen físicamente)
+                List<ChunkLocation> activeReplicas = replicas.stream()
+                        .filter(r -> healthyServers.contains(r.getChunkserverUrl()))
+                        .filter(r -> chunkExists(pdf.getPdfId(), chunkIndex, r.getChunkserverUrl()))
+                        .collect(Collectors.toList());
+
+                int neededReplicas = Math.min(REPLICATION_FACTOR, healthyServers.size()) - activeReplicas.size();
+
+                // Si faltan réplicas, crear nuevas
+                if (neededReplicas > 0) {
+                    System.out.println("   ⚠️  Chunk sub-replicado:");
+                    System.out.println("      PDF: " + pdf.getPdfId());
+                    System.out.println("      Chunk: " + chunkIndex);
+                    System.out.println("      Réplicas activas: " + activeReplicas.size() +
+                                       "/" + REPLICATION_FACTOR);
+
+                    chunksUnderReplicated++;
+
+                    int created = replicateChunk(pdf.getPdfId(), chunkIndex,
+                            activeReplicas, neededReplicas, healthyServers);
+                    replicasCreated += created;
+                    totalReReplications += created;
+                }
+            }
+        }
+
+        if (chunksUnderReplicated > 0) {
+            System.out.println("\n   📊 Resultado:");
+            System.out.println("      Chunks sub-replicados: " + chunksUnderReplicated);
+            System.out.println("      Nuevas réplicas creadas: " + replicasCreated);
+            System.out.println("      Total re-replicaciones históricas: " + totalReReplications);
+        } else {
+            System.out.println("   ✅ Factor de replicación óptimo en todos los chunks");
+        }
+        System.out.println();
+    }
+
+    /**
+     * Garbage Collection de chunks huérfanos
+     * Elimina chunks que no pertenecen a ningún PDF registrado
+     * Se ejecuta cada 5 minutos
+     */
+    @Scheduled(fixedDelay = 300000, initialDelay = 60000)
+    public void garbageCollection() {
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║  🗑️  GARBAGE COLLECTION                               ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
+
+        List<String> healthyServers = masterService.getHealthyChunkservers();
+
+        if (healthyServers.isEmpty()) {
+            System.out.println("   ⚠️  No hay servidores activos");
+            return;
+        }
+
+        // Construir conjunto de chunks válidos (que DEBERÍAN existir)
+        Set<String> validChunks = new HashSet<>();
+        List<PdfMetadata> allPdfs = masterService.listAllPdfs();
+
+        for (PdfMetadata pdf : allPdfs) {
+            for (ChunkLocation chunk : pdf.getChunks()) {
+                String chunkId = pdf.getPdfId() + ":" + chunk.getChunkIndex();
+                validChunks.add(chunkId);
+            }
+        }
+
+        System.out.println("   📝 Chunks válidos esperados: " + validChunks.size());
+
+        int orphansFound = 0;
+        int orphansDeleted = 0;
+
+        // Verificar cada chunkserver
+        for (String server : healthyServers) {
+            try {
+                Map<String, List<Integer>> inventory = getServerInventory(server);
+
+                for (Map.Entry<String, List<Integer>> entry : inventory.entrySet()) {
+                    String pdfId = entry.getKey();
+
+                    for (Integer chunkIndex : entry.getValue()) {
+                        String chunkId = pdfId + ":" + chunkIndex;
+
+                        // Si el chunk NO está en la lista de válidos, es huérfano
+                        if (!validChunks.contains(chunkId)) {
+                            System.out.println("   🗑️  Chunk huérfano detectado:");
+                            System.out.println("      PDF: " + pdfId);
+                            System.out.println("      Chunk: " + chunkIndex);
+                            System.out.println("      Servidor: " + server);
+
+                            orphansFound++;
+
+                            // Eliminar chunk huérfano
+                            if (deleteChunkFromServer(pdfId, chunkIndex, server)) {
+                                orphansDeleted++;
+                                totalGarbageCollected++;
+                                System.out.println("      ✅ Eliminado exitosamente");
+                            } else {
+                                System.out.println("      ❌ Error al eliminar");
+                            }
+                        }
+                    }
+                }
+
+            } catch (Exception e) {
+                System.err.println("   ⚠️  Error verificando servidor " + server + ": " + e.getMessage());
+            }
+        }
+
+        if (orphansFound > 0) {
+            System.out.println("\n   📊 Resultado:");
+            System.out.println("      Chunks huérfanos encontrados: " + orphansFound);
+            System.out.println("      Chunks huérfanos eliminados: " + orphansDeleted);
+            System.out.println("      Total GC histórico: " + totalGarbageCollected);
+        } else {
+            System.out.println("   ✅ No se encontraron chunks huérfanos");
+        }
+        System.out.println();
+    }
+
+    /**
+     * Re-replica un chunk en nuevos servidores
+     */
+    private int replicateChunk(String pdfId, int chunkIndex,
+                               List<ChunkLocation> existingReplicas,
+                               int neededReplicas,
+                               List<String> healthyServers) {
+
+        // Encontrar una réplica fuente saludable
+        ChunkLocation source = existingReplicas.stream()
+                .filter(r -> healthyServers.contains(r.getChunkserverUrl()))
+                .findFirst()
+                .orElse(null);
+
+        if (source == null) {
+            System.err.println("      ❌ No hay réplica fuente disponible");
+            return 0;
+        }
+
+        // Seleccionar servidores destino (que no tengan ya este chunk)
+        Set<String> serversWithChunk = existingReplicas.stream()
+                .map(ChunkLocation::getChunkserverUrl)
+                .collect(Collectors.toSet());
+
+        List<String> targetServers = healthyServers.stream()
+                .filter(s -> !serversWithChunk.contains(s))
+                .limit(neededReplicas)
+                .collect(Collectors.toList());
+
+        if (targetServers.isEmpty()) {
+            System.err.println("      ⚠️  No hay servidores disponibles para replicar");
+            return 0;
+        }
+
+        int created = 0;
+
+        try {
+            // Leer chunk desde la fuente
+            byte[] chunkData = readChunk(pdfId, chunkIndex, source.getChunkserverUrl());
+
+            // Copiar a cada servidor destino
+            for (String targetServer : targetServers) {
+                try {
+                    writeChunk(pdfId, chunkIndex, chunkData, targetServer);
+
+                    // Calcular siguiente índice de réplica
+                    int nextReplicaIndex = existingReplicas.stream()
+                                                   .mapToInt(ChunkLocation::getReplicaIndex)
+                                                   .max()
+                                                   .orElse(-1) + 1;
+
+                    // Actualizar metadatos en el Master
+                    ChunkLocation newReplica = new ChunkLocation(chunkIndex, targetServer, nextReplicaIndex);
+                    masterService.addChunkReplica(pdfId, newReplica);
+
+                    System.out.println("      ✅ Nueva réplica creada en: " + targetServer);
+                    created++;
+
+                } catch (Exception e) {
+                    System.err.println("      ❌ Error replicando a " + targetServer + ": " + e.getMessage());
+                }
+            }
+
+        } catch (Exception e) {
+            System.err.println("      ❌ Error leyendo chunk fuente: " + e.getMessage());
+        }
+
+        return created;
     }
 
     /**
@@ -115,7 +353,7 @@ public class IntegrityMonitor {
      */
     private boolean repairChunk(String pdfId, int chunkIndex, String targetServer,
                                 List<ChunkLocation> replicas) {
-        System.out.println("   [REPAIR] Intentando reparar...");
+        System.out.println("      🔧 Intentando reparar...");
 
         List<String> healthyServers = masterService.getHealthyChunkservers();
 
@@ -123,28 +361,24 @@ public class IntegrityMonitor {
         for (ChunkLocation replica : replicas) {
             String sourceServer = replica.getChunkserverUrl();
 
-            if (sourceServer.equals(targetServer)) continue; // No copiar de sí mismo
-            if (!healthyServers.contains(sourceServer)) continue; // Servidor caído
+            if (sourceServer.equals(targetServer)) continue;
+            if (!healthyServers.contains(sourceServer)) continue;
 
             if (chunkExists(pdfId, chunkIndex, sourceServer)) {
                 try {
-                    // Leer chunk desde fuente
                     byte[] chunkData = readChunk(pdfId, chunkIndex, sourceServer);
-
-                    // Escribir en destino
                     writeChunk(pdfId, chunkIndex, chunkData, targetServer);
 
-                    System.out.println("      [OK] Chunk reparado desde " + sourceServer);
+                    System.out.println("         ✅ Reparado desde " + sourceServer);
                     return true;
 
                 } catch (Exception e) {
-                    System.err.println("      [WARN] Fallo copiando desde " + sourceServer +
-                                       ": " + e.getMessage());
+                    System.err.println("         ⚠️  Fallo copiando desde " + sourceServer);
                 }
             }
         }
 
-        System.err.println("      [ERROR] No se pudo reparar - no hay replicas disponibles");
+        System.err.println("         ❌ No se pudo reparar");
         return false;
     }
 
@@ -186,12 +420,57 @@ public class IntegrityMonitor {
     }
 
     /**
+     * Obtiene inventario de un chunkserver
+     */
+    private Map<String, List<Integer>> getServerInventory(String chunkserverUrl) {
+        try {
+            String url = chunkserverUrl + "/api/chunk/inventory";
+
+            @SuppressWarnings("unchecked")
+            Map<String, List<Integer>> inventory = restTemplate.getForObject(url, Map.class);
+
+            return inventory != null ? inventory : new HashMap<>();
+        } catch (Exception e) {
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Elimina un chunk de un chunkserver
+     */
+    private boolean deleteChunkFromServer(String pdfId, int chunkIndex, String chunkserverUrl) {
+        try {
+            String url = chunkserverUrl + "/api/chunk/delete?pdfId=" + pdfId +
+                         "&chunkIndex=" + chunkIndex;
+
+            restTemplate.delete(url);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Agrupa chunks por índice
+     */
+    private Map<Integer, List<ChunkLocation>> groupByIndex(List<ChunkLocation> chunks) {
+        Map<Integer, List<ChunkLocation>> grouped = new HashMap<>();
+        for (ChunkLocation chunk : chunks) {
+            grouped.computeIfAbsent(chunk.getChunkIndex(), k -> new ArrayList<>())
+                    .add(chunk);
+        }
+        return grouped;
+    }
+
+    /**
      * Obtiene estadísticas del monitor
      */
     public Map<String, Object> getStats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("totalChecks", totalChecks);
         stats.put("totalRepairs", totalRepairs);
+        stats.put("totalReReplications", totalReReplications);
+        stats.put("totalGarbageCollected", totalGarbageCollected);
         return stats;
     }
 }
