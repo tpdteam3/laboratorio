@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class MasterService {
 
-    @Value("${gfs.chunk-size:32768}")
+    @Value("${gfs.chunk-size:65536}")
     private int CHUNK_SIZE;
 
     @Value("${gfs.replication-factor:3}")

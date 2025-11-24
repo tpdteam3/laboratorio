@@ -1,4 +1,118 @@
 {
+  "03.4.- Guia N°04.docx (1).pdf" : {
+    "pdfId" : "03.4.- Guia N°04.docx (1).pdf",
+    "size" : 279483,
+    "chunks" : [ {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 0,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 1,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 2,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 3,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 4,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 5,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 5,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 5,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 6,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 6,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 6,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 7,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 7,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 7,
+      "chunkserverUrl" : "http://localhost:9001",
+      "replicaIndex" : 2
+    }, {
+      "chunkIndex" : 8,
+      "chunkserverUrl" : "http://localhost:9004",
+      "replicaIndex" : 0
+    }, {
+      "chunkIndex" : 8,
+      "chunkserverUrl" : "http://localhost:9002",
+      "replicaIndex" : 1
+    }, {
+      "chunkIndex" : 8,
+      "chunkserverUrl" : "http://localhost:9003",
+      "replicaIndex" : 2
+    } ],
+    "timestamp" : 1764009365004
+  },
   "Práctica 03  Módulo II.pdf" : {
     "pdfId" : "Práctica 03  Módulo II.pdf",
     "size" : 114466,

@@ -18,7 +18,7 @@ public class GfsClientService {
     @Value("${gfs.master-url}")
     private String masterUrl;
 
-    @Value("${gfs.chunk-size:32768}")
+    @Value("${gfs.chunk-size:65536}")
     private int CHUNK_SIZE;
 
     private final RestTemplate restTemplate = new RestTemplate();
