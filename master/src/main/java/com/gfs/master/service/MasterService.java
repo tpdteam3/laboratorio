@@ -107,8 +107,7 @@ public class MasterService {
     }
 
     /**
-     * NUEVO: Selección de servidores con balanceo de carga mejorado
-     * Prioriza servidores con menos carga actual
+     * Selección de servidores con balanceo de carga mejorado
      */
     private List<String> selectServersForChunkWithLoadBalancing(
             List<String> availableServers, int chunkIndex) {
@@ -132,7 +131,6 @@ public class MasterService {
                 .collect(Collectors.toList());
 
         // Aplicar rotación ligera para evitar siempre elegir los mismos
-        // cuando hay empate en carga
         Collections.rotate(sortedServers, -(chunkIndex % sortedServers.size()));
 
         // Seleccionar los N menos cargados
@@ -141,7 +139,7 @@ public class MasterService {
     }
 
     /**
-     * NUEVO: Calcula la carga actual de cada servidor
+     * Calcula la carga actual de cada servidor
      */
     private Map<String, ServerLoad> calculateServerLoads(List<String> servers) {
         Map<String, ServerLoad> loads = new HashMap<>();
@@ -168,7 +166,7 @@ public class MasterService {
     }
 
     /**
-     * NUEVO: Muestra distribución de carga después de la asignación
+     * Muestra distribución de carga después de la asignación
      */
     private void showLoadDistribution(PdfMetadata metadata) {
         Map<String, Integer> distribution = new HashMap<>();
@@ -188,7 +186,7 @@ public class MasterService {
     }
 
     /**
-     * NUEVO: Agrega una nueva réplica de chunk (usado por re-replicación)
+     * NUEVO: Agrega una nueva réplica de chunk
      */
     public void addChunkReplica(String pdfId, ChunkLocation newReplica) {
         PdfMetadata metadata = pdfMetadataStore.get(pdfId);
@@ -204,6 +202,28 @@ public class MasterService {
         if (!exists) {
             metadata.getChunks().add(newReplica);
             saveMetadata();
+        }
+    }
+
+    /**
+     * NUEVO: Elimina una réplica específica de chunk
+     */
+    public void removeChunkReplica(String pdfId, int chunkIndex, String chunkserverUrl) {
+        PdfMetadata metadata = pdfMetadataStore.get(pdfId);
+        if (metadata == null) {
+            return;
+        }
+
+        // Remover la réplica específica
+        boolean removed = metadata.getChunks().removeIf(c ->
+                c.getChunkIndex() == chunkIndex &&
+                c.getChunkserverUrl().equals(chunkserverUrl)
+        );
+
+        if (removed) {
+            saveMetadata();
+            System.out.println("   [METADATA] Réplica removida: PDF=" + pdfId +
+                               ", Chunk=" + chunkIndex + ", Server=" + chunkserverUrl);
         }
     }
 
@@ -287,6 +307,13 @@ public class MasterService {
     }
 
     /**
+     * NUEVO: Obtiene lista de TODOS los chunkservers (saludables o no)
+     */
+    public List<String> getAllChunkservers() {
+        return new ArrayList<>(chunkservers.keySet());
+    }
+
+    /**
      * Obtiene estado del sistema con estadísticas de carga
      */
     public Map<String, Object> getSystemStatus() {
@@ -316,7 +343,7 @@ public class MasterService {
         status.put("totalChunks", totalChunks);
         status.put("totalReplicas", totalReplicas);
 
-        // NUEVO: Estadísticas de balanceo de carga
+        // Estadísticas de balanceo de carga
         Map<String, Integer> loadPerServer = new HashMap<>();
         for (PdfMetadata metadata : pdfMetadataStore.values()) {
             for (ChunkLocation chunk : metadata.getChunks()) {
@@ -437,7 +464,7 @@ public class MasterService {
     }
 
     /**
-     * NUEVO: Clase interna para tracking de carga de servidor
+     * Clase interna para tracking de carga de servidor
      */
     private static class ServerLoad {
         int chunkCount = 0;

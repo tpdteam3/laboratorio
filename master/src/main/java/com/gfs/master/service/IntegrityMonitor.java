@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
  * - Detecta y repara chunks faltantes
  * - Re-replicación automática proactiva
  * - Garbage collection de chunks huérfanos
+ * - Eliminación de sobre-replicación
  */
 @Service
 public class IntegrityMonitor {
@@ -37,6 +38,7 @@ public class IntegrityMonitor {
     private long totalChecks = 0;
     private long totalGarbageCollected = 0;
     private long totalReReplications = 0;
+    private long totalOverReplicasRemoved = 0;
 
     /**
      * Verifica integridad cada 30 segundos
@@ -133,7 +135,9 @@ public class IntegrityMonitor {
 
         List<PdfMetadata> allPdfs = masterService.listAllPdfs();
         int chunksUnderReplicated = 0;
+        int chunksOverReplicated = 0;
         int replicasCreated = 0;
+        int replicasRemoved = 0;
 
         for (PdfMetadata pdf : allPdfs) {
             Map<Integer, List<ChunkLocation>> chunksByIndex = groupByIndex(pdf.getChunks());
@@ -148,10 +152,12 @@ public class IntegrityMonitor {
                         .filter(r -> chunkExists(pdf.getPdfId(), chunkIndex, r.getChunkserverUrl()))
                         .collect(Collectors.toList());
 
-                int neededReplicas = Math.min(REPLICATION_FACTOR, healthyServers.size()) - activeReplicas.size();
+                int targetReplicas = Math.min(REPLICATION_FACTOR, healthyServers.size());
 
-                // Si faltan réplicas, crear nuevas
-                if (neededReplicas > 0) {
+                // CASO 1: Sub-replicación (faltan réplicas)
+                if (activeReplicas.size() < targetReplicas) {
+                    int neededReplicas = targetReplicas - activeReplicas.size();
+
                     System.out.println("   ⚠️  Chunk sub-replicado:");
                     System.out.println("      PDF: " + pdf.getPdfId());
                     System.out.println("      Chunk: " + chunkIndex);
@@ -165,16 +171,147 @@ public class IntegrityMonitor {
                     replicasCreated += created;
                     totalReReplications += created;
                 }
+                // CASO 2: Sobre-replicación (demasiadas réplicas)
+                else if (activeReplicas.size() > targetReplicas) {
+                    int excessReplicas = activeReplicas.size() - targetReplicas;
+
+                    System.out.println("   ⚠️  Chunk sobre-replicado:");
+                    System.out.println("      PDF: " + pdf.getPdfId());
+                    System.out.println("      Chunk: " + chunkIndex);
+                    System.out.println("      Réplicas activas: " + activeReplicas.size() +
+                                       "/" + REPLICATION_FACTOR);
+
+                    chunksOverReplicated++;
+
+                    int removed = removeExcessReplicas(pdf.getPdfId(), chunkIndex,
+                            activeReplicas, excessReplicas);
+                    replicasRemoved += removed;
+                    totalOverReplicasRemoved += removed;
+                }
             }
         }
 
-        if (chunksUnderReplicated > 0) {
+        // Mostrar resultado
+        boolean hadIssues = chunksUnderReplicated > 0 || chunksOverReplicated > 0;
+
+        if (hadIssues) {
             System.out.println("\n   📊 Resultado:");
-            System.out.println("      Chunks sub-replicados: " + chunksUnderReplicated);
-            System.out.println("      Nuevas réplicas creadas: " + replicasCreated);
+            if (chunksUnderReplicated > 0) {
+                System.out.println("      Chunks sub-replicados: " + chunksUnderReplicated);
+                System.out.println("      Nuevas réplicas creadas: " + replicasCreated);
+            }
+            if (chunksOverReplicated > 0) {
+                System.out.println("      Chunks sobre-replicados: " + chunksOverReplicated);
+                System.out.println("      Réplicas excedentes eliminadas: " + replicasRemoved);
+            }
             System.out.println("      Total re-replicaciones históricas: " + totalReReplications);
+            System.out.println("      Total sobre-réplicas eliminadas: " + totalOverReplicasRemoved);
         } else {
             System.out.println("   ✅ Factor de replicación óptimo en todos los chunks");
+        }
+        System.out.println();
+    }
+
+    /**
+     * NUEVO: Elimina réplicas excedentes para mantener el factor de replicación
+     */
+    private int removeExcessReplicas(String pdfId, int chunkIndex,
+                                     List<ChunkLocation> activeReplicas,
+                                     int excessCount) {
+
+        System.out.println("      🗑️  Eliminando " + excessCount + " réplicas excedentes...");
+
+        // Ordenar réplicas por índice (mantener las primarias, eliminar las últimas)
+        List<ChunkLocation> sortedReplicas = activeReplicas.stream()
+                .sorted(Comparator.comparingInt(ChunkLocation::getReplicaIndex).reversed())
+                .collect(Collectors.toList());
+
+        int removed = 0;
+
+        // Eliminar las últimas N réplicas
+        for (int i = 0; i < excessCount && i < sortedReplicas.size(); i++) {
+            ChunkLocation replicaToRemove = sortedReplicas.get(i);
+            String serverUrl = replicaToRemove.getChunkserverUrl();
+
+            try {
+                // Eliminar físicamente del chunkserver
+                if (deleteChunkFromServer(pdfId, chunkIndex, serverUrl)) {
+                    // Eliminar de metadatos
+                    masterService.removeChunkReplica(pdfId, chunkIndex, serverUrl);
+
+                    System.out.println("         ✅ Réplica eliminada de: " + serverUrl);
+                    removed++;
+                } else {
+                    System.out.println("         ❌ Error eliminando de: " + serverUrl);
+                }
+
+            } catch (Exception e) {
+                System.err.println("         ⚠️  Error eliminando réplica: " + e.getMessage());
+            }
+        }
+
+        return removed;
+    }
+
+    /**
+     * Limpia réplicas de metadatos que apuntan a servidores caídos
+     * Se ejecuta cada 2 minutos
+     */
+    @Scheduled(fixedDelay = 120000, initialDelay = 45000)
+    public void cleanupStaleMetadata() {
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║  🧹 LIMPIEZA DE METADATOS OBSOLETOS                   ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
+
+        List<String> healthyServers = masterService.getHealthyChunkservers();
+        List<String> allServers = masterService.getAllChunkservers();
+
+        // Encontrar servidores que están registrados pero no saludables
+        Set<String> unhealthyServers = new HashSet<>(allServers);
+        unhealthyServers.removeAll(healthyServers);
+
+        if (unhealthyServers.isEmpty()) {
+            System.out.println("   ✅ Todos los servidores están saludables");
+            return;
+        }
+
+        System.out.println("   ⚠️  Servidores no saludables: " + unhealthyServers.size());
+
+        int metadataEntriesRemoved = 0;
+        List<PdfMetadata> allPdfs = masterService.listAllPdfs();
+
+        for (PdfMetadata pdf : allPdfs) {
+            List<ChunkLocation> chunksToRemove = new ArrayList<>();
+
+            for (ChunkLocation chunk : pdf.getChunks()) {
+                // Si el chunk apunta a un servidor no saludable Y no existe físicamente
+                if (unhealthyServers.contains(chunk.getChunkserverUrl())) {
+                    if (!chunkExists(pdf.getPdfId(), chunk.getChunkIndex(),
+                            chunk.getChunkserverUrl())) {
+                        chunksToRemove.add(chunk);
+                    }
+                }
+            }
+
+            // Remover entradas de metadatos obsoletas
+            for (ChunkLocation chunk : chunksToRemove) {
+                masterService.removeChunkReplica(pdf.getPdfId(),
+                        chunk.getChunkIndex(),
+                        chunk.getChunkserverUrl());
+                metadataEntriesRemoved++;
+
+                System.out.println("   🗑️  Metadata removido:");
+                System.out.println("      PDF: " + pdf.getPdfId());
+                System.out.println("      Chunk: " + chunk.getChunkIndex());
+                System.out.println("      Servidor: " + chunk.getChunkserverUrl());
+            }
+        }
+
+        if (metadataEntriesRemoved > 0) {
+            System.out.println("\n   📊 Resultado:");
+            System.out.println("      Entradas de metadata eliminadas: " + metadataEntriesRemoved);
+        } else {
+            System.out.println("   ✅ No hay metadata obsoleto");
         }
         System.out.println();
     }
@@ -471,6 +608,7 @@ public class IntegrityMonitor {
         stats.put("totalRepairs", totalRepairs);
         stats.put("totalReReplications", totalReReplications);
         stats.put("totalGarbageCollected", totalGarbageCollected);
+        stats.put("totalOverReplicasRemoved", totalOverReplicasRemoved);
         return stats;
     }
 }
